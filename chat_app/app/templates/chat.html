@@ -1,0 +1,181 @@
+{% extends "base.html" %}
+
+{% block content %}
+    <div class="chat-container">
+        <div class="sidebar">
+            <div class="users-list">
+                <h3>Users</h3>
+                <ul>
+                    {% for user in users %}
+                        <li class="user-item" data-user-id="{{ user.id }}">
+                            {{ user.username }}
+                            <span class="status-indicator" id="status-{{ user.id }}">•</span>
+                        </li>
+                    {% endfor %}
+                </ul>
+            </div>
+            
+            <div class="groups-list">
+                <h3>Groups</h3>
+                <ul>
+                    {% for group in groups %}
+                        <li class="group-item" data-group-id="{{ group.group.id }}">
+                            {{ group.group.name }}
+                        </li>
+                    {% endfor %}
+                </ul>
+                
+                <div class="create-group">
+                    <h4>Create Group</h4>
+                    <form method="POST" action="{{ url_for('main.create_group') }}">
+                        <input type="text" name="group_name" placeholder="Group name" required>
+                        <button type="submit">Create</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+        
+        <div class="chat-area">
+            <div class="chat-header">
+                <h2 id="chat-title">Select a chat</h2>
+            </div>
+            
+            <div class="messages" id="messages">
+                <!-- Messages will appear here -->
+            </div>
+            
+            <div class="message-input">
+                <form id="message-form">
+                    <input type="hidden" id="chat-type">
+                    <input type="hidden" id="chat-id">
+                    <input type="text" id="message-content" placeholder="Type your message..." autocomplete="off">
+                    <button type="submit">Send</button>
+                </form>
+            </div>
+        </div>
+    </div>
+{% endblock %}
+
+{% block scripts %}
+    <script>
+        const socket = io();
+        const currentUserId = {{ current_user.id if current_user.is_authenticated else 0 }};
+        
+        // Handle user selection
+        document.querySelectorAll('.user-item').forEach(item => {
+            item.addEventListener('click', function() {
+                const userId = this.getAttribute('data-user-id');
+                document.getElementById('chat-type').value = 'private';
+                document.getElementById('chat-id').value = userId;
+                document.getElementById('chat-title').textContent = this.textContent.trim();
+                
+                // Clear and load messages
+                document.getElementById('messages').innerHTML = '';
+                fetch(`/get_messages?recipient_id=${userId}`)
+                    .then(response => response.json())
+                    .then(messages => {
+                        messages.forEach(msg => {
+                            addMessageToChat(msg);
+                        });
+                    });
+            });
+        });
+        
+        // Handle group selection
+        document.querySelectorAll('.group-item').forEach(item => {
+            item.addEventListener('click', function() {
+                const groupId = this.getAttribute('data-group-id');
+                document.getElementById('chat-type').value = 'group';
+                document.getElementById('chat-id').value = groupId;
+                document.getElementById('chat-title').textContent = this.textContent.trim();
+                
+                // Clear and load messages
+                document.getElementById('messages').innerHTML = '';
+                fetch(`/get_group_messages?group_id=${groupId}`)
+                    .then(response => response.json())
+                    .then(messages => {
+                        messages.forEach(msg => {
+                            addMessageToChat(msg);
+                        });
+                    });
+            });
+        });
+        
+        // Handle message submission
+        document.getElementById('message-form').addEventListener('submit', function(e) {
+            e.preventDefault();
+            const chatType = document.getElementById('chat-type').value;
+            const chatId = document.getElementById('chat-id').value;
+            const content = document.getElementById('message-content').value;
+            
+            if (content.trim() === '') return;
+            
+            if (chatType === 'private') {
+                socket.emit('private_message', {
+                    recipient_id: chatId,
+                    content: content
+                });
+            } else if (chatType === 'group') {
+                socket.emit('group_message', {
+                    group_id: chatId,
+                    content: content
+                });
+            }
+            
+            // Add message to UI immediately
+            const message = {
+                sender_id: currentUserId,
+                content: content,
+                timestamp: new Date().toISOString()
+            };
+            addMessageToChat(message);
+            
+            document.getElementById('message-content').value = '';
+        });
+        
+        // Handle incoming private messages
+        socket.on('new_private_message', function(data) {
+            if (document.getElementById('chat-type').value === 'private' && 
+                document.getElementById('chat-id').value == data.sender_id) {
+                addMessageToChat(data);
+            }
+        });
+        
+        // Handle incoming group messages
+        socket.on('new_group_message', function(data) {
+            if (document.getElementById('chat-type').value === 'group' && 
+                document.getElementById('chat-id').value == data.group_id) {
+                addMessageToChat(data);
+            }
+        });
+        
+        // Handle user status updates
+        socket.on('user_status', function(data) {
+            const statusElement = document.getElementById(`status-${data.user_id}`);
+            if (statusElement) {
+                statusElement.style.color = data.status === 'online' ? 'green' : 'gray';
+            }
+        });
+        
+        // Helper function to add message to chat
+        function addMessageToChat(message) {
+            const messagesDiv = document.getElementById('messages');
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${message.sender_id == currentUserId ? 'sent' : 'received'}`;
+            
+            const contentDiv = document.createElement('div');
+            contentDiv.className = 'message-content';
+            contentDiv.textContent = message.content;
+            
+            const timeDiv = document.createElement('div');
+            timeDiv.className = 'message-time';
+            timeDiv.textContent = new Date(message.timestamp).toLocaleTimeString();
+            
+            messageDiv.appendChild(contentDiv);
+            messageDiv.appendChild(timeDiv);
+            messagesDiv.appendChild(messageDiv);
+            
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        }
+    </script>
+{% endblock %}

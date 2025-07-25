@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+
+{% block content %}
+    <div class="hero">
+        <h1>Welcome to the Chat App</h1>
+        <p>Connect with friends and colleagues in real-time</p>
+        {% if not current_user.is_authenticated %}
+            <div class="auth-buttons">
+                <a href="{{ url_for('auth.login') }}" class="btn">Login</a>
+                <a href="{{ url_for('auth.register') }}" class="btn">Register</a>
+            </div>
+        {% endif %}
+    </div>
+{% endblock %}
